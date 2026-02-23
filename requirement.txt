@@ -1,5 +1,12 @@
+# Base project dependencies
 requests
 pandas
 python-dotenv
 mysql-connector-python
 psycopg2-binary
+
+# Airflow (Python 3.10)
+# Install with constraints to avoid dependency conflicts:
+# pip install -r requirement.txt
+-c https://raw.githubusercontent.com/apache/airflow/constraints-2.10.3/constraints-3.10.txt
+apache-airflow==2.10.3
