@@ -1,5 +1,4 @@
 import psycopg2
-from psycopg2 import Error
 
 class PostgreSQLConnect:
     def __init__(self, host, port, user, password,database):
@@ -25,7 +24,7 @@ class PostgreSQLConnect:
             self.cursor = self.connection.cursor()
             print("------------connected to PostgreSQL-------------")
             return self.connection, self.cursor
-        except Error as e:
+        except psycopg2.Error as e:
             if "does not exist" in str(e):
                 print(f"Database does not exist. Connecting to default 'postgres' database")
                 self.config["database"] = "postgres"
