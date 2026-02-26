@@ -1,54 +1,8 @@
-"""
-Weather ETL Pipeline DAG
-Orchestrates:
-1. Optional schema init
-2. Extract weather -> Kafka
-3. Spark streaming load -> DB
-"""
-
 from datetime import timedelta
-import os
+
 import pendulum
-
 from airflow import DAG
-from airflow.models import Variable
 from airflow.operators.bash import BashOperator
-from airflow.operators.empty import EmptyOperator
-from airflow.operators.python import ShortCircuitOperator
-
-
-# -------------------------------------------------------------------
-# CONFIG
-# -------------------------------------------------------------------
-
-PROJECT_ROOT = os.getenv("WEATHER_PROJECT_ROOT", "/opt/airflow/weather")
-PYTHON_BIN = os.getenv("PYTHON_BIN", "python")
-
-
-def get_var(name, default=None):
-    try:
-        return Variable.get(name)
-    except Exception:
-        return default
-
-
-CONFIG = {
-    "API_KEY": get_var("API_KEY"),
-    "API_URL": get_var("API_URL", "https://api.openweathermap.org/data/2.5/weather"),
-    "JSON_PATH": get_var(
-        "json_path",
-        f"{PROJECT_ROOT}/ETL/extract/get_cities/city.list.json",
-    ),
-    "ENABLE_SCHEMA": get_var("ENABLE_DB_SCHEMA_INIT", "false").lower() == "true",
-}
-
-
-# -------------------------------------------------------------------
-# HELPERS
-# -------------------------------------------------------------------
-
-def should_init_schema():
-    return CONFIG["ENABLE_SCHEMA"]
 
 
 default_args = {
@@ -59,56 +13,49 @@ default_args = {
 }
 
 
-# -------------------------------------------------------------------
-# DAG
-# -------------------------------------------------------------------
-
 with DAG(
-    dag_id="weather_etl_pipeline",
+    dag_id="weather_lakehouse_pipeline",
     start_date=pendulum.datetime(2024, 1, 1, tz="UTC"),
-    schedule_interval="*/15 * * * *",
+    schedule_interval="0 * * * *",
     catchup=False,
     max_active_runs=1,
-    dagrun_timeout=timedelta(hours=2),
     default_args=default_args,
-    tags=["weather", "streaming"],
+    tags=["weather", "lakehouse", "iceberg"],
 ) as dag:
 
-    check_schema = ShortCircuitOperator(
-        task_id="check_schema_flag",
-        python_callable=should_init_schema,
-    )
-
-    init_schema = BashOperator(
-        task_id="init_schema",
-        cwd=PROJECT_ROOT,
-        bash_command=f"{PYTHON_BIN} src/main.py",
+    extract_task = BashOperator(
+        task_id="extract_task",
+        cwd="/opt/airflow/project",
+        bash_command="python extract/weather_api.py",
         execution_timeout=timedelta(minutes=10),
     )
 
-    skip_schema = EmptyOperator(task_id="skip_schema")
-
-    extract_weather = BashOperator(
-        task_id="extract_weather",
-        cwd=PROJECT_ROOT,
-        bash_command=f"{PYTHON_BIN} ETL/extract/extract.py",
-        env={
-            "API_KEY": CONFIG["API_KEY"],
-            "API_URL": CONFIG["API_URL"],
-            "json_path": CONFIG["JSON_PATH"],
-            "KAFKA_BOOTSTRAP": get_var("KAFKA_BOOTSTRAP", "localhost:9092"),
-        },
-        retries=3,
-        retry_delay=timedelta(minutes=3),
+    bronze_task = BashOperator(
+        task_id="bronze_task",
+        cwd="/opt/airflow/project",
+        bash_command="spark-submit spark/jobs/bronze_ingest.py",
         execution_timeout=timedelta(minutes=20),
     )
 
-    stream_load = BashOperator(
-        task_id="stream_load",
-        cwd=PROJECT_ROOT,
-        bash_command=f"{PYTHON_BIN} ETL/TransformAndLoad.py",
-        execution_timeout=timedelta(minutes=45),
+    silver_task = BashOperator(
+        task_id="silver_task",
+        cwd="/opt/airflow/project",
+        bash_command="spark-submit spark/jobs/silver_transform.py",
+        execution_timeout=timedelta(minutes=20),
     )
 
-    check_schema >> [init_schema, skip_schema]
-    [init_schema, skip_schema] >> extract_weather >> stream_load
+    gold_task = BashOperator(
+        task_id="gold_task",
+        cwd="/opt/airflow/project",
+        bash_command="spark-submit spark/jobs/gold_aggregate.py",
+        execution_timeout=timedelta(minutes=20),
+    )
+
+    iceberg_maintenance_task = BashOperator(
+        task_id="iceberg_maintenance_task",
+        cwd="/opt/airflow/project",
+        bash_command="spark-submit spark/jobs/iceberg_maintenance.py",
+        execution_timeout=timedelta(minutes=20),
+    )
+
+    extract_task >> bronze_task >> silver_task >> gold_task >> iceberg_maintenance_task
