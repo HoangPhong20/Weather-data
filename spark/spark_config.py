@@ -1,5 +1,9 @@
+import logging
 from pyspark.sql import SparkSession
 from typing import Optional, Dict, List
+
+
+logger = logging.getLogger(__name__)
 
 
 class SparkConnect:
@@ -60,4 +64,4 @@ class SparkConnect:
     def stop(self):
         if self.spark:
             self.spark.stop()
-            print("-------- stop spark session --------")
+            logger.info("Spark session stopped")

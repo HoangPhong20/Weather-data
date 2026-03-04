@@ -1,8 +1,12 @@
 from datetime import timedelta
+import logging
 
 import pendulum
 from airflow import DAG
 from airflow.operators.bash import BashOperator
+
+
+logger = logging.getLogger(__name__)
 
 
 default_args = {
@@ -22,6 +26,7 @@ with DAG(
     default_args=default_args,
     tags=["weather", "lakehouse", "iceberg"],
 ) as dag:
+    logger.info("Initializing DAG weather_lakehouse_pipeline")
 
     extract_task = BashOperator(
         task_id="extract_task",

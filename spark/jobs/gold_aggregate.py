@@ -1,8 +1,16 @@
 import os
+import logging
 from spark.spark_config import SparkConnect
+
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 
 def main() -> None:
+    logger.info("Starting gold aggregate job")
 
     connector = SparkConnect(
         app_name="gold-aggregate",
@@ -25,6 +33,7 @@ def main() -> None:
             FROM weather.silver.weather_clean
             GROUP BY country
         """)
+        logger.info("Built table weather.gold.avg_temp_by_country")
 
         # -----------------------------------------
         # Daily summary
@@ -41,6 +50,7 @@ def main() -> None:
             FROM weather.silver.weather_clean
             GROUP BY date(event_time), country
         """)
+        logger.info("Built table weather.gold.daily_weather_summary")
 
         # -----------------------------------------
         # Hottest city per day
@@ -62,6 +72,7 @@ def main() -> None:
             )
             WHERE rank_no = 1
         """)
+        logger.info("Built table weather.gold.hottest_city_per_day")
 
     finally:
         connector.stop()
