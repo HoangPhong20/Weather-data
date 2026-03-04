@@ -1,6 +1,7 @@
 import json
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 
 import requests
 
@@ -8,6 +9,7 @@ import requests
 API_URL = os.getenv("WEATHER_API_URL", "https://api.openweathermap.org/data/2.5/weather")
 CITIES = [city.strip() for city in os.getenv("WEATHER_CITIES", "Hanoi").split(",") if city.strip()]
 OUTPUT_FILE = os.getenv("WEATHER_OUTPUT_FILE", "data/weather_raw.jsonl")
+CITY_LIST_FILE = Path(os.getenv("WEATHER_CITY_LIST_FILE", "/get_cities/city.list.json"))
 
 
 def get_api_key() -> str:

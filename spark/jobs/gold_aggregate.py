@@ -1,16 +1,14 @@
-from pyspark.sql import SparkSession
+from spark.spark_config import Spark_connect
+
+JAR_PACKAGES = [
+    "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.5.2",
+    "org.apache.hadoop:hadoop-aws:3.3.4",
+]
 
 
 def main() -> None:
-    spark = (
-        SparkSession.builder.appName("gold-aggregate")
-        .config(
-            "spark.jars.packages",
-            "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.5.2,"
-            "org.apache.hadoop:hadoop-aws:3.3.4",
-        )
-        .getOrCreate()
-    )
+    connector = Spark_connect(app_name="gold-aggregate", jar_packages=JAR_PACKAGES)
+    spark = connector.spark
 
     spark.sql("CREATE NAMESPACE IF NOT EXISTS weather.gold")
 
@@ -62,7 +60,7 @@ def main() -> None:
         """
     )
 
-    spark.stop()
+    connector.stop()
 
 
 if __name__ == "__main__":

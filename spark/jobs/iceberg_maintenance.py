@@ -1,5 +1,10 @@
 from pyspark.sql import SparkSession
+from spark.spark_config import Spark_connect
 
+JAR_PACKAGES = [
+    "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.5.2",
+    "org.apache.hadoop:hadoop-aws:3.3.4",
+]
 
 TARGET_TABLES = [
     "weather.bronze.weather_raw",
@@ -30,20 +35,13 @@ def run_maintenance(spark: SparkSession, table_name: str) -> None:
 
 
 def main() -> None:
-    spark = (
-        SparkSession.builder.appName("iceberg-maintenance")
-        .config(
-            "spark.jars.packages",
-            "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.5.2,"
-            "org.apache.hadoop:hadoop-aws:3.3.4",
-        )
-        .getOrCreate()
-    )
+    connector = Spark_connect(app_name="iceberg-maintenance", jar_packages=JAR_PACKAGES)
+    spark = connector.spark
 
     for table in TARGET_TABLES:
         run_maintenance(spark, table)
 
-    spark.stop()
+    connector.stop()
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-from pyspark.sql import SparkSession
+from spark.spark_config import Spark_connect
 from pyspark.sql.functions import col, from_json, upper
 from pyspark.sql.types import DoubleType, IntegerType, LongType, StringType, StructField, StructType
 
@@ -21,17 +21,15 @@ schema = StructType(
     ]
 )
 
+JAR_PACKAGES = [
+    "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.5.2",
+    "org.apache.hadoop:hadoop-aws:3.3.4",
+]
+
 
 def main() -> None:
-    spark = (
-        SparkSession.builder.appName("silver-transform")
-        .config(
-            "spark.jars.packages",
-            "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.5.2,"
-            "org.apache.hadoop:hadoop-aws:3.3.4",
-        )
-        .getOrCreate()
-    )
+    connector = Spark_connect(app_name="silver-transform", jar_packages=JAR_PACKAGES)
+    spark = connector.spark
 
     spark.sql("CREATE NAMESPACE IF NOT EXISTS weather.silver")
     spark.sql(
@@ -66,7 +64,7 @@ def main() -> None:
     )
 
     clean_df.writeTo("weather.silver.weather_clean").overwritePartitions()
-    spark.stop()
+    connector.stop()
 
 
 if __name__ == "__main__":

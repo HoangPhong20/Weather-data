@@ -1,20 +1,17 @@
-from pyspark.sql import SparkSession
+from spark.spark_config import Spark_connect
 from pyspark.sql.functions import col, to_timestamp
 
+JAR_PACKAGES = [
+    "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.5.2",
+    "org.apache.hadoop:hadoop-aws:3.3.4",
+]
 
 INPUT_FILE = "data/weather_raw.jsonl"
 
 
 def main() -> None:
-    spark = (
-        SparkSession.builder.appName("bronze-ingest")
-        .config(
-            "spark.jars.packages",
-            "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.5.2,"
-            "org.apache.hadoop:hadoop-aws:3.3.4",
-        )
-        .getOrCreate()
-    )
+    connector = Spark_connect(app_name="bronze-ingest", jar_packages=JAR_PACKAGES)
+    spark = connector.spark
 
     spark.sql("CREATE NAMESPACE IF NOT EXISTS weather.bronze")
     spark.sql(
@@ -35,7 +32,7 @@ def main() -> None:
     )
 
     bronze_df.writeTo("weather.bronze.weather_raw").append()
-    spark.stop()
+    connector.stop()
 
 
 if __name__ == "__main__":
