@@ -2,7 +2,7 @@ from pyspark.sql import SparkSession
 from typing import Optional, Dict, List
 
 
-class Spark_connect:
+class SparkConnect:
 
     def __init__(
         self,
@@ -21,8 +21,6 @@ class Spark_connect:
         )
 
     # --------------------------------------------------
-    # Create Spark Session
-    # --------------------------------------------------
     def create_session(
         self,
         app_name: str,
@@ -34,29 +32,32 @@ class Spark_connect:
 
         builder = SparkSession.builder.appName(app_name)
 
-        # master
+        # ✅ only override master if provided
         if master_url:
             builder = builder.master(master_url)
 
-        # jars (Iceberg + S3)
+        # ✅ extra jars (NOT replace defaults)
         if jar_packages:
             builder = builder.config(
                 "spark.jars.packages",
                 ",".join(jar_packages),
             )
 
-        # spark configs
+        # ✅ optional overrides
         if spark_conf:
-            for k, v in spark_conf.items():
-                builder = builder.config(k, v)
+            for key, value in spark_conf.items():
+                builder = builder.config(key, value)
 
+        # ⭐ Spark will automatically read:
+        # spark-defaults.conf
         spark = builder.getOrCreate()
+
         spark.sparkContext.setLogLevel(log_level)
 
         return spark
 
     # --------------------------------------------------
-    def stop(self) -> None:
+    def stop(self):
         if self.spark:
             self.spark.stop()
             print("-------- stop spark session --------")

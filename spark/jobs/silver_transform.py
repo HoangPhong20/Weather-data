@@ -1,8 +1,7 @@
-from spark.spark_config import Spark_connect
-from config.spark_iceberg import JAR_PACKAGES, ICEBERG_CONF
-
+from spark.spark_config import SparkConnect
 from pyspark.sql.functions import col, from_json, upper, from_unixtime
 from pyspark.sql.types import *
+import os
 
 schema = StructType([
     StructField("name", StringType()),
@@ -21,57 +20,57 @@ schema = StructType([
 
 
 def main() -> None:
-    connector = Spark_connect(
+
+    connector = SparkConnect(
         app_name="silver-transform",
-        jar_packages=JAR_PACKAGES,
-        spark_conf=ICEBERG_CONF,
+        master_url=os.getenv("SPARK_MASTER_URL"),
     )
 
     spark = connector.spark
 
-    spark.sql("CREATE NAMESPACE IF NOT EXISTS weather.silver")
+    try:
+        spark.sql("CREATE NAMESPACE IF NOT EXISTS weather.silver")
 
-    spark.sql(
-        """
-        CREATE TABLE IF NOT EXISTS weather.silver.weather_clean (
-            city STRING,
-            country STRING,
-            event_time TIMESTAMP,
-            temperature DOUBLE,
-            humidity INT,
-            wind_speed DOUBLE
+        spark.sql("""
+            CREATE TABLE IF NOT EXISTS weather.silver.weather_clean (
+                city STRING,
+                country STRING,
+                event_time TIMESTAMP,
+                temperature DOUBLE,
+                humidity INT,
+                wind_speed DOUBLE
+            )
+            USING ICEBERG
+            PARTITIONED BY (days(event_time))
+        """)
+
+        bronze_df = spark.table("weather.bronze.weather_raw")
+
+        parsed_df = (
+            bronze_df
+            .select(from_json(col("raw_json"), schema).alias("w"))
+            .select("w.*")
         )
-        USING ICEBERG
-        PARTITIONED BY (days(event_time))
-        """
-    )
 
-    bronze_df = spark.table("weather.bronze.weather_raw")
-
-    parsed_df = (
-        bronze_df
-        .select(from_json(col("raw_json"), schema).alias("w"))
-        .select("w.*")
-    )
-
-    clean_df = (
-        parsed_df.select(
-            col("name").alias("city"),
-            upper(col("sys.country")).alias("country"),
-            from_unixtime(col("dt")).cast("timestamp").alias("event_time"),
-            (col("main.temp") - 273.15).alias("temperature"),
-            col("main.humidity").alias("humidity"),
-            col("wind.speed").alias("wind_speed"),
+        clean_df = (
+            parsed_df.select(
+                col("name").alias("city"),
+                upper(col("sys.country")).alias("country"),
+                from_unixtime(col("dt")).cast("timestamp").alias("event_time"),
+                (col("main.temp") - 273.15).alias("temperature"),
+                col("main.humidity").alias("humidity"),
+                col("wind.speed").alias("wind_speed"),
+            )
+            .dropna(subset=["city", "country", "event_time"])
+            .dropDuplicates(["city", "country", "event_time"])
         )
-        .dropna(subset=["city", "country", "event_time"])
-        .dropDuplicates(["city", "country", "event_time"])
-    )
 
-    clean_df.writeTo(
-        "weather.silver.weather_clean"
-    ).overwritePartitions()
+        clean_df.writeTo(
+            "weather.silver.weather_clean"
+        ).overwritePartitions()
 
-    connector.stop()
+    finally:
+        connector.stop()
 
 
 if __name__ == "__main__":
