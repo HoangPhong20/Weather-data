@@ -1,30 +1,30 @@
 from spark.spark_config import Spark_connect
-
-JAR_PACKAGES = [
-    "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.5.2",
-    "org.apache.hadoop:hadoop-aws:3.3.4",
-]
+from config.spark_iceberg import JAR_PACKAGES, ICEBERG_CONF
 
 
 def main() -> None:
-    connector = Spark_connect(app_name="gold-aggregate", jar_packages=JAR_PACKAGES)
+    connector = Spark_connect(
+        app_name="gold-aggregate",
+        jar_packages=JAR_PACKAGES,
+        spark_conf=ICEBERG_CONF,
+    )
+
     spark = connector.spark
 
     spark.sql("CREATE NAMESPACE IF NOT EXISTS weather.gold")
 
-    spark.sql(
-        """
+    # avg temp
+    spark.sql("""
         CREATE OR REPLACE TABLE weather.gold.avg_temp_by_country
         USING ICEBERG
         AS
         SELECT country, AVG(temperature) AS avg_temp
         FROM weather.silver.weather_clean
         GROUP BY country
-        """
-    )
+    """)
 
-    spark.sql(
-        """
+    # daily summary
+    spark.sql("""
         CREATE OR REPLACE TABLE weather.gold.daily_weather_summary
         USING ICEBERG
         AS
@@ -36,11 +36,10 @@ def main() -> None:
                MIN(temperature) AS min_temperature
         FROM weather.silver.weather_clean
         GROUP BY date(event_time), country
-        """
-    )
+    """)
 
-    spark.sql(
-        """
+    # hottest city
+    spark.sql("""
         CREATE OR REPLACE TABLE weather.gold.hottest_city_per_day
         USING ICEBERG
         AS
@@ -57,8 +56,7 @@ def main() -> None:
             FROM weather.silver.weather_clean
         )
         WHERE rank_no = 1
-        """
-    )
+    """)
 
     connector.stop()
 

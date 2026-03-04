@@ -1,83 +1,62 @@
 from pyspark.sql import SparkSession
-from typing import Optional, List, Dict
+from typing import Optional, Dict, List
 
 
 class Spark_connect:
+
     def __init__(
         self,
         app_name: str,
-        master_url: str = "local[*]",
-        executor_memory: Optional[str] = None,
-        executor_cores: Optional[int] = None,
-        driver_memory: Optional[str] = None,
-        num_executors: Optional[int] = None,
+        master_url: Optional[str] = None,
         jar_packages: Optional[List[str]] = None,
         spark_conf: Optional[Dict[str, str]] = None,
         log_level: str = "INFO",
     ):
-        self.app_name = app_name
-
-        self.spark = self.create_spark_session(
+        self.spark = self.create_session(
+            app_name,
             master_url,
-            executor_memory,
-            executor_cores,
-            driver_memory,
-            num_executors,
             jar_packages,
             spark_conf,
             log_level,
         )
 
-    def create_spark_session(
+    # --------------------------------------------------
+    # Create Spark Session
+    # --------------------------------------------------
+    def create_session(
         self,
-        master_url: str = "local[*]",
-        executor_memory: Optional[str] = None,
-        executor_cores: Optional[int] = None,
-        driver_memory: Optional[str] = None,
-        num_executors: Optional[int] = None,
-        jar_packages: Optional[List[str]] = None,
-        spark_conf: Optional[Dict[str, str]] = None,
-        log_level: str = "INFO",
+        app_name: str,
+        master_url: Optional[str],
+        jar_packages: Optional[List[str]],
+        spark_conf: Optional[Dict[str, str]],
+        log_level: str,
     ) -> SparkSession:
 
-        builder = (
-            SparkSession.builder
-            .appName(self.app_name)
-            .master(master_url)
-        )
+        builder = SparkSession.builder.appName(app_name)
 
-        # Optional configs (override only if provided)
-        if executor_memory:
-            builder.config("spark.executor.memory", executor_memory)
+        # master
+        if master_url:
+            builder = builder.master(master_url)
 
-        if executor_cores:
-            builder.config("spark.executor.cores", executor_cores)
-
-        if driver_memory:
-            builder.config("spark.driver.memory", driver_memory)
-
-        # ✅ FIX: đúng key Spark
-        if num_executors:
-            builder.config("spark.executor.instances", num_executors)
-
-        # Jar packages (Iceberg, Kafka...)
+        # jars (Iceberg + S3)
         if jar_packages:
-            builder.config(
+            builder = builder.config(
                 "spark.jars.packages",
                 ",".join(jar_packages),
             )
 
-        # Extra spark configs
+        # spark configs
         if spark_conf:
-            for key, value in spark_conf.items():
-                builder.config(key, value)
+            for k, v in spark_conf.items():
+                builder = builder.config(k, v)
 
         spark = builder.getOrCreate()
         spark.sparkContext.setLogLevel(log_level)
 
         return spark
 
-    def stop(self):
+    # --------------------------------------------------
+    def stop(self) -> None:
         if self.spark:
             self.spark.stop()
             print("-------- stop spark session --------")

@@ -1,37 +1,36 @@
 from spark.spark_config import Spark_connect
-from pyspark.sql.functions import col, from_json, upper
-from pyspark.sql.types import DoubleType, IntegerType, LongType, StringType, StructField, StructType
+from config.spark_iceberg import JAR_PACKAGES, ICEBERG_CONF
 
+from pyspark.sql.functions import col, from_json, upper, from_unixtime
+from pyspark.sql.types import *
 
-schema = StructType(
-    [
-        StructField("name", StringType()),
-        StructField("dt", LongType()),
-        StructField("sys", StructType([StructField("country", StringType())])),
-        StructField(
-            "main",
-            StructType(
-                [
-                    StructField("temp", DoubleType()),
-                    StructField("humidity", IntegerType()),
-                ]
-            ),
-        ),
-        StructField("wind", StructType([StructField("speed", DoubleType())])),
-    ]
-)
-
-JAR_PACKAGES = [
-    "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.5.2",
-    "org.apache.hadoop:hadoop-aws:3.3.4",
-]
+schema = StructType([
+    StructField("name", StringType()),
+    StructField("dt", LongType()),
+    StructField("sys", StructType([
+        StructField("country", StringType())
+    ])),
+    StructField("main", StructType([
+        StructField("temp", DoubleType()),
+        StructField("humidity", IntegerType()),
+    ])),
+    StructField("wind", StructType([
+        StructField("speed", DoubleType())
+    ])),
+])
 
 
 def main() -> None:
-    connector = Spark_connect(app_name="silver-transform", jar_packages=JAR_PACKAGES)
+    connector = Spark_connect(
+        app_name="silver-transform",
+        jar_packages=JAR_PACKAGES,
+        spark_conf=ICEBERG_CONF,
+    )
+
     spark = connector.spark
 
     spark.sql("CREATE NAMESPACE IF NOT EXISTS weather.silver")
+
     spark.sql(
         """
         CREATE TABLE IF NOT EXISTS weather.silver.weather_clean (
@@ -48,22 +47,30 @@ def main() -> None:
     )
 
     bronze_df = spark.table("weather.bronze.weather_raw")
-    parsed_df = bronze_df.select(from_json(col("raw_json"), schema).alias("w")).select("w.*")
+
+    parsed_df = (
+        bronze_df
+        .select(from_json(col("raw_json"), schema).alias("w"))
+        .select("w.*")
+    )
 
     clean_df = (
         parsed_df.select(
             col("name").alias("city"),
             upper(col("sys.country")).alias("country"),
-            col("dt").cast("timestamp").alias("event_time"),
+            from_unixtime(col("dt")).cast("timestamp").alias("event_time"),
             (col("main.temp") - 273.15).alias("temperature"),
             col("main.humidity").alias("humidity"),
             col("wind.speed").alias("wind_speed"),
         )
-        .dropna(subset=["city", "country", "event_time", "temperature"])
+        .dropna(subset=["city", "country", "event_time"])
         .dropDuplicates(["city", "country", "event_time"])
     )
 
-    clean_df.writeTo("weather.silver.weather_clean").overwritePartitions()
+    clean_df.writeTo(
+        "weather.silver.weather_clean"
+    ).overwritePartitions()
+
     connector.stop()
 
 

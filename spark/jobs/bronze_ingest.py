@@ -1,19 +1,24 @@
 from spark.spark_config import Spark_connect
-from pyspark.sql.functions import col, to_timestamp
+from config.spark_iceberg import JAR_PACKAGES, ICEBERG_CONF
 
-JAR_PACKAGES = [
-    "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.5.2",
-    "org.apache.hadoop:hadoop-aws:3.3.4",
-]
+from pyspark.sql.functions import col, current_timestamp
 
 INPUT_FILE = "data/weather_raw.jsonl"
 
 
 def main() -> None:
-    connector = Spark_connect(app_name="bronze-ingest", jar_packages=JAR_PACKAGES)
+    connector = Spark_connect(
+        app_name="bronze-ingest",
+        jar_packages=JAR_PACKAGES,
+        spark_conf=ICEBERG_CONF,
+    )
+
     spark = connector.spark
 
+    # namespace
     spark.sql("CREATE NAMESPACE IF NOT EXISTS weather.bronze")
+
+    # bronze table
     spark.sql(
         """
         CREATE TABLE IF NOT EXISTS weather.bronze.weather_raw (
@@ -25,13 +30,16 @@ def main() -> None:
         """
     )
 
-    source_df = spark.read.json(INPUT_FILE)
+    # ✅ Bronze = RAW (không parse JSON)
+    source_df = spark.read.text(INPUT_FILE)
+
     bronze_df = source_df.select(
-        col("raw_json").cast("string"),
-        to_timestamp(col("ingestion_time")).alias("ingestion_time"),
+        col("value").alias("raw_json"),
+        current_timestamp().alias("ingestion_time"),
     )
 
     bronze_df.writeTo("weather.bronze.weather_raw").append()
+
     connector.stop()
 
 
