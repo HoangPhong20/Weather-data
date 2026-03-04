@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 
 from weather_pipeline.contracts import (
     REQUIRED_MAIN_FIELDS,
@@ -8,6 +9,9 @@ from weather_pipeline.contracts import (
     REQUIRED_SYS_FIELDS,
     REQUIRED_WIND_FIELDS,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 def validate_weather_schema(payload: dict) -> bool:
@@ -43,6 +47,7 @@ def to_event_time(unix_ts: int) -> str:
 
 def transform_raw_weather(payload: dict) -> dict:
     if not validate_weather_schema(payload):
+        logger.warning("Invalid weather payload schema. payload_keys=%s", list(payload.keys()) if isinstance(payload, dict) else type(payload))
         raise ValueError("Invalid weather payload schema")
 
     return {

@@ -1,10 +1,17 @@
 from spark.spark_config import SparkConnect
 from pyspark.sql.functions import col, current_timestamp
+import logging
 import os
 
 INPUT_FILE = "data/weather_raw.jsonl"
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 def main() -> None:
+    logger.info("Starting bronze ingest job with input file: %s", INPUT_FILE)
 
     # Spark session (configs auto-loaded from spark-defaults.conf)
     connector = SparkConnect(
@@ -37,6 +44,7 @@ def main() -> None:
     # Bronze ingest (no parsing)
     # --------------------------------------------------
     source_df = spark.read.text(INPUT_FILE)
+    logger.info("Loaded raw source records: %d", source_df.count())
 
     bronze_df = source_df.select(
         col("value").alias("raw_json"),
@@ -44,6 +52,7 @@ def main() -> None:
     )
 
     bronze_df.writeTo("weather.bronze.weather_raw").append()
+    logger.info("Appended bronze records: %d", bronze_df.count())
 
     connector.stop()
 

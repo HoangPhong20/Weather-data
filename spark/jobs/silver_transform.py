@@ -1,7 +1,14 @@
 from spark.spark_config import SparkConnect
 from pyspark.sql.functions import col, from_json, upper, from_unixtime
 from pyspark.sql.types import *
+import logging
 import os
+
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 schema = StructType([
     StructField("name", StringType()),
@@ -20,6 +27,7 @@ schema = StructType([
 
 
 def main() -> None:
+    logger.info("Starting silver transform job")
 
     connector = SparkConnect(
         app_name="silver-transform",
@@ -45,6 +53,7 @@ def main() -> None:
         """)
 
         bronze_df = spark.table("weather.bronze.weather_raw")
+        logger.info("Read bronze records: %d", bronze_df.count())
 
         parsed_df = (
             bronze_df
@@ -68,6 +77,7 @@ def main() -> None:
         clean_df.writeTo(
             "weather.silver.weather_clean"
         ).overwritePartitions()
+        logger.info("Silver transform wrote records: %d", clean_df.count())
 
     finally:
         connector.stop()
