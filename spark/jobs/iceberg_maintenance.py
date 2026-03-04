@@ -1,5 +1,11 @@
+import logging
+import os
+
 from pyspark.sql import SparkSession
 
+
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+logger = logging.getLogger(__name__)
 
 TARGET_TABLES = [
     "weather.bronze.weather_raw",
@@ -11,6 +17,7 @@ TARGET_TABLES = [
 
 
 def run_maintenance(spark: SparkSession, table_name: str) -> None:
+    logger.info("Running maintenance for table=%s", table_name)
     spark.sql(
         f"CALL weather.system.rewrite_data_files(table => '{table_name}')"
     )
@@ -30,6 +37,7 @@ def run_maintenance(spark: SparkSession, table_name: str) -> None:
 
 
 def main() -> None:
+    logger.info("Starting iceberg maintenance")
     spark = (
         SparkSession.builder.appName("iceberg-maintenance")
         .config(
@@ -43,6 +51,7 @@ def main() -> None:
     for table in TARGET_TABLES:
         run_maintenance(spark, table)
 
+    logger.info("Iceberg maintenance completed")
     spark.stop()
 
 

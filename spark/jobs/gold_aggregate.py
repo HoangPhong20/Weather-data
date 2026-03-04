@@ -1,7 +1,15 @@
+import logging
+import os
+
 from pyspark.sql import SparkSession
 
 
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+logger = logging.getLogger(__name__)
+
+
 def main() -> None:
+    logger.info("Starting gold aggregation")
     spark = (
         SparkSession.builder.appName("gold-aggregate")
         .config(
@@ -62,6 +70,7 @@ def main() -> None:
         """
     )
 
+    logger.info("Gold aggregation completed")
     spark.stop()
 
 

@@ -1,7 +1,13 @@
+import logging
+import os
+
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, from_json, upper
 from pyspark.sql.types import DoubleType, IntegerType, LongType, StringType, StructField, StructType
 
+
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+logger = logging.getLogger(__name__)
 
 schema = StructType(
     [
@@ -23,6 +29,7 @@ schema = StructType(
 
 
 def main() -> None:
+    logger.info("Starting silver transform")
     spark = (
         SparkSession.builder.appName("silver-transform")
         .config(
@@ -66,6 +73,7 @@ def main() -> None:
     )
 
     clean_df.writeTo("weather.silver.weather_clean").overwritePartitions()
+    logger.info("Silver transform completed")
     spark.stop()
 
 

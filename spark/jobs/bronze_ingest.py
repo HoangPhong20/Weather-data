@@ -1,11 +1,18 @@
+import logging
+import os
+
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, to_timestamp
 
+
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+logger = logging.getLogger(__name__)
 
 INPUT_FILE = "data/weather_raw.jsonl"
 
 
 def main() -> None:
+    logger.info("Starting bronze ingest from %s", INPUT_FILE)
     spark = (
         SparkSession.builder.appName("bronze-ingest")
         .config(
@@ -35,6 +42,7 @@ def main() -> None:
     )
 
     bronze_df.writeTo("weather.bronze.weather_raw").append()
+    logger.info("Bronze ingest completed")
     spark.stop()
 
 
