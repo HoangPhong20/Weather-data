@@ -1,3 +1,4 @@
+from weather_pipeline.contracts import weather_schema
 from weather_pipeline.transformations import validate_weather_schema
 
 
@@ -23,3 +24,9 @@ def test_validate_weather_schema_missing_nested_field():
     }
 
     assert validate_weather_schema(payload) is False
+
+
+def test_weather_schema_contract_contains_expected_fields():
+    if weather_schema is None:
+        return
+    assert weather_schema.fieldNames() == ["name", "dt", "sys", "main", "wind"]
