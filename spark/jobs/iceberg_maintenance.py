@@ -4,48 +4,52 @@ import logging
 import os
 
 logging.basicConfig(
-    level=os.getenv("LOG_LEVEL", "INFO"),
+    level=getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper()),
     format="%(asctime)s %(levelname)s %(name)s - %(message)s",
 )
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("maintenance")
 
 TARGET_TABLES = [
     "weather.bronze.weather_raw",
     "weather.silver.weather_clean",
     "weather.gold.avg_temp_by_country",
     "weather.gold.daily_weather_summary",
-    "weather.gold.hottest_city_per_day",
 ]
 
 
-def run_maintenance(spark: SparkSession, table_name: str) -> None:
-    logger.info("Running maintenance for table: %s", table_name)
+def run_maintenance(spark: SparkSession, table: str):
+
+    if not spark.catalog.tableExists(table):
+        logger.warning("Skip missing table %s", table)
+        return
+
+    logger.info("Maintaining %s", table)
 
     spark.sql(f"""
         CALL weather.system.rewrite_data_files(
-            table => '{table_name}'
+            table => '{table}',
+            options => map('min-input-files','5')
         )
     """)
 
     spark.sql(f"""
         CALL weather.system.expire_snapshots(
-            table => '{table_name}',
+            table => '{table}',
             older_than => current_timestamp() - INTERVAL 7 DAYS
         )
     """)
 
     spark.sql(f"""
         CALL weather.system.remove_orphan_files(
-            table => '{table_name}'
+            table => '{table}'
         )
     """)
 
 
-def main() -> None:
-    logger.info("Starting iceberg maintenance job for %d table(s)", len(TARGET_TABLES))
+def main():
 
     connector = SparkConnect(
-        app_name="iceberg-maintenance",
+        app_name=f"maintenance-{os.getenv('AIRFLOW_RUN_ID','local')}",
         master_url=os.getenv("SPARK_MASTER_URL"),
     )
 
@@ -53,8 +57,11 @@ def main() -> None:
 
     try:
         for table in TARGET_TABLES:
-            run_maintenance(spark, table)
-        logger.info("Iceberg maintenance completed")
+            try:
+                run_maintenance(spark, table)
+            except Exception:
+                logger.exception("Failed maintenance: %s", table)
+
     finally:
         connector.stop()
 

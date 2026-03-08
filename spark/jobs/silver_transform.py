@@ -1,14 +1,15 @@
 from spark.spark_config import SparkConnect
-from pyspark.sql.functions import col, from_json, upper, from_unixtime
+from pyspark.sql.functions import *
 from pyspark.sql.types import *
 import logging
 import os
 
 logging.basicConfig(
-    level=os.getenv("LOG_LEVEL", "INFO"),
+    level=getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper()),
     format="%(asctime)s %(levelname)s %(name)s - %(message)s",
 )
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("silver")
+
 
 schema = StructType([
     StructField("name", StringType()),
@@ -27,10 +28,10 @@ schema = StructType([
 
 
 def main() -> None:
-    logger.info("Starting silver transform job")
+    logger.info("Silver transform started")
 
     connector = SparkConnect(
-        app_name="silver-transform",
+        app_name=f"silver-{os.getenv('AIRFLOW_RUN_ID','local')}",
         master_url=os.getenv("SPARK_MASTER_URL"),
     )
 
@@ -53,31 +54,31 @@ def main() -> None:
         """)
 
         bronze_df = spark.table("weather.bronze.weather_raw")
-        logger.info("Read bronze records: %d", bronze_df.count())
 
-        parsed_df = (
+        clean_df = (
             bronze_df
             .select(from_json(col("raw_json"), schema).alias("w"))
             .select("w.*")
-        )
-
-        clean_df = (
-            parsed_df.select(
+            .filter(col("main").isNotNull())
+            .select(
                 col("name").alias("city"),
                 upper(col("sys.country")).alias("country"),
-                from_unixtime(col("dt")).cast("timestamp").alias("event_time"),
+                to_timestamp(from_unixtime(col("dt"))).alias("event_time"),
                 (col("main.temp") - 273.15).alias("temperature"),
                 col("main.humidity").alias("humidity"),
                 col("wind.speed").alias("wind_speed"),
             )
+            .filter(col("temperature").between(-80, 70))
             .dropna(subset=["city", "country", "event_time"])
             .dropDuplicates(["city", "country", "event_time"])
         )
 
-        clean_df.writeTo(
-            "weather.silver.weather_clean"
-        ).overwritePartitions()
-        logger.info("Silver transform wrote records: %d", clean_df.count())
+        (
+            clean_df.writeTo("weather.silver.weather_clean")
+            .overwritePartitions()
+        )
+
+        logger.info("Silver transform completed")
 
     finally:
         connector.stop()

@@ -3,7 +3,7 @@ import logging
 from spark.spark_config import SparkConnect
 
 logging.basicConfig(
-    level=os.getenv("LOG_LEVEL", "INFO"),
+    level=getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper()),
     format="%(asctime)s %(levelname)s %(name)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
@@ -13,66 +13,66 @@ def main() -> None:
     logger.info("Starting gold aggregate job")
 
     connector = SparkConnect(
-        app_name="gold-aggregate",
+        app_name=f"gold-aggregate-{os.getenv('AIRFLOW_RUN_ID','local')}",
         master_url=os.getenv("SPARK_MASTER_URL"),
     )
 
     spark = connector.spark
 
     try:
+        if not spark.catalog.tableExists("weather.silver.weather_clean"):
+            raise RuntimeError("Missing silver table")
+
         spark.sql("CREATE NAMESPACE IF NOT EXISTS weather.gold")
 
         # -----------------------------------------
-        # Avg temperature by country
+        # Avg temp
         # -----------------------------------------
         spark.sql("""
-            CREATE OR REPLACE TABLE weather.gold.avg_temp_by_country
-            USING ICEBERG AS
-            SELECT country,
-                   AVG(temperature) AS avg_temp
+            CREATE TABLE IF NOT EXISTS weather.gold.avg_temp_by_country (
+                country STRING,
+                avg_temp DOUBLE
+            )
+            USING ICEBERG
+        """)
+
+        spark.sql("""
+            INSERT OVERWRITE weather.gold.avg_temp_by_country
+            SELECT country, AVG(temperature)
             FROM weather.silver.weather_clean
             GROUP BY country
         """)
-        logger.info("Built table weather.gold.avg_temp_by_country")
+
+        logger.info("Updated avg_temp_by_country")
 
         # -----------------------------------------
         # Daily summary
         # -----------------------------------------
         spark.sql("""
-            CREATE OR REPLACE TABLE weather.gold.daily_weather_summary
-            USING ICEBERG AS
-            SELECT date(event_time) AS weather_day,
+            CREATE TABLE IF NOT EXISTS weather.gold.daily_weather_summary (
+                weather_day DATE,
+                country STRING,
+                avg_temperature DOUBLE,
+                avg_humidity DOUBLE,
+                max_temperature DOUBLE,
+                min_temperature DOUBLE
+            )
+            USING ICEBERG
+        """)
+
+        spark.sql("""
+            INSERT OVERWRITE weather.gold.daily_weather_summary
+            SELECT date(event_time),
                    country,
-                   AVG(temperature) AS avg_temperature,
-                   AVG(humidity) AS avg_humidity,
-                   MAX(temperature) AS max_temperature,
-                   MIN(temperature) AS min_temperature
+                   AVG(temperature),
+                   AVG(humidity),
+                   MAX(temperature),
+                   MIN(temperature)
             FROM weather.silver.weather_clean
             GROUP BY date(event_time), country
         """)
-        logger.info("Built table weather.gold.daily_weather_summary")
 
-        # -----------------------------------------
-        # Hottest city per day
-        # -----------------------------------------
-        spark.sql("""
-            CREATE OR REPLACE TABLE weather.gold.hottest_city_per_day
-            USING ICEBERG AS
-            SELECT weather_day, country, city, temperature
-            FROM (
-                SELECT date(event_time) AS weather_day,
-                       country,
-                       city,
-                       temperature,
-                       row_number() OVER (
-                           PARTITION BY date(event_time), country
-                           ORDER BY temperature DESC
-                       ) AS rank_no
-                FROM weather.silver.weather_clean
-            )
-            WHERE rank_no = 1
-        """)
-        logger.info("Built table weather.gold.hottest_city_per_day")
+        logger.info("Updated daily_weather_summary")
 
     finally:
         connector.stop()
