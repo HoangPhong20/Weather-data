@@ -82,8 +82,11 @@ def run() -> None:
     with OUTPUT_FILE.open("w", encoding="utf-8") as out:
         logger.info("Writing weather records to %s for %d city(ies)", OUTPUT_FILE, len(cities))
         for city in cities:
-            record = fetch_city_weather(city, api_key)
-            out.write(json.dumps(record, ensure_ascii=False) + "\n")
+            try:
+                record = fetch_city_weather(city, api_key)
+                out.write(json.dumps(record, ensure_ascii=False) + "\n")
+            except Exception as e:
+                logger.error("Failed city=%s error=%s", city, e)
     logger.info("Weather extraction completed successfully")
 
 

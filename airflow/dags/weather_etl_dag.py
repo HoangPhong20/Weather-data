@@ -6,85 +6,90 @@ from airflow import DAG
 from airflow.operators.bash import BashOperator
 
 
-# --------------------------------------------------
-# Paths
-# --------------------------------------------------
-PROJECT_ROOT = "/opt/airflow/project"
+# ==================================================
+# CONFIG
+# ==================================================
+
+PROJECT_ROOT = os.getenv("PROJECT_ROOT", "/opt/airflow/project")
 SPARK_JOBS_ROOT = f"{PROJECT_ROOT}/spark/jobs"
 
-SPARK_SUBMIT = os.getenv(
-    "SPARK_SUBMIT",
-    "/opt/spark/bin/spark-submit",
-)
+SPARK_SUBMIT = os.getenv("SPARK_SUBMIT", "spark-submit")
+PYTHON_BIN = os.getenv("PYTHON_BIN", "python")
 
 COMMON_ENV = {
+    **os.environ,
     "SPARK_MASTER_URL": os.getenv(
         "SPARK_MASTER_URL",
         "spark://spark-master:7077",
-    )
+    ),
 }
 
-# --------------------------------------------------
-# Default args
-# --------------------------------------------------
-default_args = {
+# ==================================================
+# DEFAULT DAG ARGS
+# ==================================================
+
+DEFAULT_ARGS = {
     "owner": "data-platform",
     "depends_on_past": False,
     "retries": 2,
     "retry_delay": timedelta(minutes=5),
 }
 
-# --------------------------------------------------
+# ==================================================
+# TASK FACTORIES
+# ==================================================
+
+def spark_task(task_id: str, job: str, timeout: int = 20):
+    """Create Spark submit task"""
+    spark_command = (
+        f"""{SPARK_SUBMIT} \
+--master {COMMON_ENV['SPARK_MASTER_URL']} \
+{SPARK_JOBS_ROOT}/{job}"""
+    )
+    return BashOperator(
+        task_id=task_id,
+        cwd=PROJECT_ROOT,
+        env=COMMON_ENV,
+        bash_command=spark_command,
+        execution_timeout=timedelta(minutes=timeout),
+    )
+
+
+def python_task(task_id: str, script: str, timeout: int = 10):
+    """Create Python execution task"""
+    return BashOperator(
+        task_id=task_id,
+        cwd=PROJECT_ROOT,
+        env=COMMON_ENV,
+        bash_command=f"{PYTHON_BIN} {script}",
+        execution_timeout=timedelta(minutes=timeout),
+    )
+
+# ==================================================
 # DAG
-# --------------------------------------------------
+# ==================================================
+
 with DAG(
     dag_id="weather_lakehouse_pipeline",
-    start_date=pendulum.datetime(
-        2024, 1, 1,
-        tz="Asia/Ho_Chi_Minh",
-    ),
-    schedule="0 * * * *",  # hourly
+    description="Weather ETL pipeline (Extract → Bronze → Silver → Gold)",
+    start_date=pendulum.datetime(2024, 1, 1, tz="Asia/Ho_Chi_Minh"),
+    schedule="0 * * * *",
     catchup=False,
     max_active_runs=1,
-    default_args=default_args,
+    default_args=DEFAULT_ARGS,
     tags=["weather", "lakehouse", "iceberg"],
 ) as dag:
 
     # ---------------- EXTRACT ----------------
-    extract_task = BashOperator(
-        task_id="extract_task",
-        cwd=PROJECT_ROOT,
-        env=COMMON_ENV,
-        bash_command="python extract/weather_api.py",
-        execution_timeout=timedelta(minutes=10),
+    extract = python_task(
+        task_id="extract_weather",
+        script=f"{PROJECT_ROOT}/extract/weather_api.py",
     )
 
-    # ---------------- BRONZE ----------------
-    bronze_task = BashOperator(
-        task_id="bronze_task",
-        cwd=PROJECT_ROOT,
-        env=COMMON_ENV,
-        bash_command=f"{SPARK_SUBMIT} {SPARK_JOBS_ROOT}/bronze_ingest.py",
-        execution_timeout=timedelta(minutes=20),
-    )
+    # ---------------- SPARK LAYERS ----------------
+    bronze = spark_task("bronze_ingest", "bronze_ingest.py")
+    silver = spark_task("silver_transform", "silver_transform.py")
+    gold = spark_task("gold_aggregate", "gold_aggregate.py")
 
-    # ---------------- SILVER ----------------
-    silver_task = BashOperator(
-        task_id="silver_task",
-        cwd=PROJECT_ROOT,
-        env=COMMON_ENV,
-        bash_command=f"{SPARK_SUBMIT} {SPARK_JOBS_ROOT}/silver_transform.py",
-        execution_timeout=timedelta(minutes=20),
-    )
-
-    # ---------------- GOLD ----------------
-    gold_task = BashOperator(
-        task_id="gold_task",
-        cwd=PROJECT_ROOT,
-        env=COMMON_ENV,
-        bash_command=f"{SPARK_SUBMIT} {SPARK_JOBS_ROOT}/gold_aggregate.py",
-        execution_timeout=timedelta(minutes=20),
-    )
-
-    # Pipeline order
-    extract_task >> bronze_task >> silver_task >> gold_task
+    # ---------------- PIPELINE ORDER ----------------
+    extract >> bronze >> silver >> gold
