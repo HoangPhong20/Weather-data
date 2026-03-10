@@ -3,11 +3,20 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import logging
 
+from typing import Any
+
+try:
+    from pyspark.sql import DataFrame
+    from pyspark.sql.functions import col, from_json, from_unixtime, upper
+except ModuleNotFoundError:  # pragma: no cover
+    DataFrame = Any
+
 from weather_pipeline.contracts import (
     REQUIRED_MAIN_FIELDS,
     REQUIRED_RAW_FIELDS,
     REQUIRED_SYS_FIELDS,
     REQUIRED_WIND_FIELDS,
+    weather_schema,
 )
 
 
@@ -58,3 +67,25 @@ def transform_raw_weather(payload: dict) -> dict:
         "humidity": int(payload["main"]["humidity"]),
         "wind_speed": float(payload["wind"]["speed"]),
     }
+
+
+def parse_weather(df: DataFrame) -> DataFrame:
+    if weather_schema is None:
+        raise ModuleNotFoundError("pyspark is required to parse weather DataFrame")
+
+    return (
+        df.select(from_json(col("raw_json"), weather_schema).alias("w"))
+        .select("w.*")
+        .select(
+            col("name").alias("city"),
+            upper(col("sys.country")).alias("country"),
+            from_unixtime(col("dt")).cast("timestamp").alias("event_time"),
+            (col("main.temp") - 273.15).alias("temperature"),
+            col("main.humidity").alias("humidity"),
+            col("wind.speed").alias("wind_speed"),
+        )
+    )
+
+
+def clean_weather(df: DataFrame) -> DataFrame:
+    return df.dropna(subset=["city", "country", "event_time"]).dropDuplicates(["city", "country", "event_time"])

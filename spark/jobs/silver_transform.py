@@ -1,37 +1,23 @@
 from spark.spark_config import SparkConnect
-from pyspark.sql.functions import *
-from pyspark.sql.types import *
 import logging
 import os
 
+from weather_pipeline.business_rules import filter_valid_temperature
+from weather_pipeline.transformations import clean_weather, parse_weather
+
+
 logging.basicConfig(
-    level=getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper()),
+    level=os.getenv("LOG_LEVEL", "INFO"),
     format="%(asctime)s %(levelname)s %(name)s - %(message)s",
 )
-logger = logging.getLogger("silver")
-
-
-schema = StructType([
-    StructField("name", StringType()),
-    StructField("dt", LongType()),
-    StructField("sys", StructType([
-        StructField("country", StringType())
-    ])),
-    StructField("main", StructType([
-        StructField("temp", DoubleType()),
-        StructField("humidity", IntegerType()),
-    ])),
-    StructField("wind", StructType([
-        StructField("speed", DoubleType())
-    ])),
-])
+logger = logging.getLogger(__name__)
 
 
 def main() -> None:
-    logger.info("Silver transform started")
+    logger.info("Starting silver transform job")
 
     connector = SparkConnect(
-        app_name=f"silver-{os.getenv('AIRFLOW_RUN_ID','local')}",
+        app_name="silver-transform",
         master_url=os.getenv("SPARK_MASTER_URL"),
     )
 
@@ -54,31 +40,14 @@ def main() -> None:
         """)
 
         bronze_df = spark.table("weather.bronze.weather_raw")
+        logger.info("Read bronze records: %d", bronze_df.count())
 
-        clean_df = (
-            bronze_df
-            .select(from_json(col("raw_json"), schema).alias("w"))
-            .select("w.*")
-            .filter(col("main").isNotNull())
-            .select(
-                col("name").alias("city"),
-                upper(col("sys.country")).alias("country"),
-                to_timestamp(from_unixtime(col("dt"))).alias("event_time"),
-                (col("main.temp") - 273.15).alias("temperature"),
-                col("main.humidity").alias("humidity"),
-                col("wind.speed").alias("wind_speed"),
-            )
-            .filter(col("temperature").between(-80, 70))
-            .dropna(subset=["city", "country", "event_time"])
-            .dropDuplicates(["city", "country", "event_time"])
-        )
+        parsed_df = parse_weather(bronze_df)
+        clean_df = clean_weather(parsed_df)
+        quality_df = filter_valid_temperature(clean_df)
 
-        (
-            clean_df.writeTo("weather.silver.weather_clean")
-            .overwritePartitions()
-        )
-
-        logger.info("Silver transform completed")
+        quality_df.writeTo("weather.silver.weather_clean").overwritePartitions()
+        logger.info("Silver transform wrote records: %d", quality_df.count())
 
     finally:
         connector.stop()
