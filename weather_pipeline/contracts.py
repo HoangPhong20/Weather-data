@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 
 try:
     from pyspark.sql.types import (
@@ -17,7 +18,7 @@ except ModuleNotFoundError:  # pragma: no cover
 class SilverWeatherRecord:
     city: str
     country: str
-    event_time: str
+    event_time: datetime
     temperature: float
     humidity: int
     wind_speed: float
@@ -48,3 +49,8 @@ if StructType is not None:
     )
 else:  # pragma: no cover
     weather_schema = None
+
+__all__ = [
+    "SilverWeatherRecord",
+    "weather_schema",
+]

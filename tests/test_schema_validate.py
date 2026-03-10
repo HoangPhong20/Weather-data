@@ -1,32 +1,57 @@
+import pytest
+
 from weather_pipeline.contracts import weather_schema
 from weather_pipeline.transformations import validate_weather_schema
 
 
-def test_validate_weather_schema_valid_payload():
-    payload = {
-        "name": "Hanoi",
-        "dt": 1735600000,
-        "sys": {"country": "VN"},
-        "main": {"temp": 301.15, "humidity": 70},
-        "wind": {"speed": 3.4},
-    }
+# --------------------------------------------------
+# Test data
+# --------------------------------------------------
 
-    assert validate_weather_schema(payload) is True
+VALID_PAYLOAD = {
+    "name": "Hanoi",
+    "dt": 1735600000,
+    "sys": {"country": "VN"},
+    "main": {"temp": 301.15, "humidity": 70},
+    "wind": {"speed": 3.4},
+}
 
 
-def test_validate_weather_schema_missing_nested_field():
-    payload = {
-        "name": "Hanoi",
-        "dt": 1735600000,
-        "sys": {},
-        "main": {"temp": 301.15, "humidity": 70},
-        "wind": {"speed": 3.4},
-    }
+# --------------------------------------------------
+# Schema validation tests
+# --------------------------------------------------
 
-    assert validate_weather_schema(payload) is False
+@pytest.mark.parametrize(
+    "payload, expected",
+    [
+        (VALID_PAYLOAD, True),
+        (
+            {
+                **VALID_PAYLOAD,
+                "sys": {},  # missing nested field
+            },
+            False,
+        ),
+        ({}, False),
+        (None, False),
+    ],
+)
+def test_validate_weather_schema(payload, expected):
+    assert validate_weather_schema(payload) is expected
 
+
+# --------------------------------------------------
+# Contract tests (schema structure)
+# --------------------------------------------------
 
 def test_weather_schema_contract_contains_expected_fields():
     if weather_schema is None:
-        return
-    assert weather_schema.fieldNames() == ["name", "dt", "sys", "main", "wind"]
+        pytest.skip("pyspark not installed")
+
+    assert weather_schema.fieldNames() == [
+        "name",
+        "dt",
+        "sys",
+        "main",
+        "wind",
+    ]

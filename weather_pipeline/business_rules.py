@@ -6,6 +6,9 @@ try:
 except ModuleNotFoundError:  # pragma: no cover
     DataFrame = Any
 
+TEMP_MIN = -80
+TEMP_MAX = 70
+
 
 def is_temperature_in_expected_range(temp_celsius: float) -> bool:
     return -90.0 <= temp_celsius <= 60.0
@@ -24,4 +27,4 @@ def is_country_code_valid(country: str) -> bool:
 def filter_valid_temperature(df: DataFrame) -> DataFrame:
     if "col" not in globals():
         raise ModuleNotFoundError("pyspark is required to filter DataFrames")
-    return df.filter(col("temperature").between(-80, 70))
+    return df.filter(col("temperature").between(TEMP_MIN, TEMP_MAX))

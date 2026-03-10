@@ -1,3 +1,5 @@
+import pytest
+
 from weather_pipeline.business_rules import (
     filter_valid_temperature,
     has_valid_null_rate,
@@ -6,21 +8,62 @@ from weather_pipeline.business_rules import (
 )
 
 
-def test_temperature_business_rule():
-    assert is_temperature_in_expected_range(35.0) is True
-    assert is_temperature_in_expected_range(-120.0) is False
+# ======================================================
+# Temperature rules
+# ======================================================
+# Test cases for temperature business rule with edge cases at -90 and 60 degrees Celsius
+@pytest.mark.parametrize(
+    "temperature,expected",
+    [
+        (35.0, True),
+        (-90.0, True),     # lower boundary
+        (60.0, True),      # upper boundary
+        (-120.0, False),
+        (61.0, False),
+    ],
+)
+def test_temperature_business_rule(temperature, expected):
+    assert is_temperature_in_expected_range(temperature) is expected
 
 
-def test_null_rate_business_rule():
-    assert has_valid_null_rate(total_rows=100, null_rows=4, threshold=0.05) is True
-    assert has_valid_null_rate(total_rows=100, null_rows=8, threshold=0.05) is False
+# ======================================================
+# Null rate rules
+# ======================================================
+
+@pytest.mark.parametrize(
+    "total,nulls,threshold,expected",
+    [
+        (100, 4, 0.05, True),
+        (100, 8, 0.05, False),
+        (0, 0, 0.05, False),  # edge case
+    ],
+)
+def test_null_rate_business_rule(total, nulls, threshold, expected):
+    assert has_valid_null_rate(total, nulls, threshold) is expected
 
 
-def test_country_code_business_rule():
-    assert is_country_code_valid("VN") is True
-    assert is_country_code_valid("VNM") is False
-    assert is_country_code_valid("vn") is False
+# ======================================================
+# Country code validation
+# ======================================================
 
+@pytest.mark.parametrize(
+    "country,expected",
+    [
+        ("VN", True),
+        ("VNM", False),
+        ("vn", False),
+        ("", False),
+        (None, False),
+        ("1N", False),
+    ],
+)
+def test_country_code_business_rule(country, expected):
+    assert is_country_code_valid(country) is expected
+
+
+# ======================================================
+# Spark DataFrame rule
+# ======================================================
 
 def test_filter_valid_temperature_dataframe(spark):
     df = spark.createDataFrame(
@@ -34,5 +77,6 @@ def test_filter_valid_temperature_dataframe(spark):
 
     result = filter_valid_temperature(df)
 
-    assert result.count() == 1
-    assert result.collect()[0]["city"] == "Hanoi"
+    rows = {row["city"] for row in result.collect()}
+
+    assert rows == {"Hanoi"}

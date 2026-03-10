@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import logging
 
-from typing import Any
+from typing import Any, Iterable
 
 try:
     from pyspark.sql import DataFrame
@@ -42,6 +42,18 @@ def validate_weather_schema(payload: dict) -> bool:
     return True
 
 
+def summarize_schema_validation(payloads: Iterable[dict]) -> list[dict]:
+    valid_payloads = []
+    total = 0
+    for payload in payloads:
+        total += 1
+        if validate_weather_schema(payload):
+            valid_payloads.append(payload)
+    invalid_count = total - len(valid_payloads)
+    logger.info("invalid_records=%d", invalid_count)
+    return valid_payloads
+
+
 def kelvin_to_celsius(kelvin: float) -> float:
     return round(kelvin - 273.15, 2)
 
@@ -50,8 +62,8 @@ def normalize_country_code(country: str) -> str:
     return (country or "").strip().upper()
 
 
-def to_event_time(unix_ts: int) -> str:
-    return datetime.fromtimestamp(unix_ts, tz=timezone.utc).isoformat()
+def to_event_time(unix_ts: int) -> datetime:
+    return datetime.fromtimestamp(unix_ts, tz=timezone.utc)
 
 
 def transform_raw_weather(payload: dict) -> dict:
@@ -85,6 +97,11 @@ def parse_weather(df: DataFrame) -> DataFrame:
             col("wind.speed").alias("wind_speed"),
         )
     )
+
+
+def parse_weather_cached(df: DataFrame) -> DataFrame:
+    parsed = parse_weather(df)
+    return parsed.cache()
 
 
 def clean_weather(df: DataFrame) -> DataFrame:

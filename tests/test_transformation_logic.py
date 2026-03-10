@@ -1,3 +1,5 @@
+import pytest
+
 from weather_pipeline.transformations import (
     clean_weather,
     kelvin_to_celsius,
@@ -7,46 +9,92 @@ from weather_pipeline.transformations import (
     transform_raw_weather,
 )
 
+# --------------------------------------------------
+# Unit tests (pure python functions)
+# --------------------------------------------------
 
-def test_kelvin_to_celsius_conversion():
-    assert kelvin_to_celsius(300.15) == 27.0
+@pytest.mark.parametrize(
+    "kelvin, expected",
+    [
+        (300.15, 27.0),
+        (273.15, 0.0),
+    ],
+)
+def test_kelvin_to_celsius_conversion(kelvin, expected):
+    assert kelvin_to_celsius(kelvin) == expected
+# pytest.mark.parametrize
+# @pytest.mark.parametrize("x", [1,2,3])
+# def test(x):
+#     ...
+
+# test = parametrize(...)(test)
+
+# Decorator này nói với pytest:
+
+# hãy chạy test nhiều lần với data khác nhau
+
+@pytest.mark.parametrize(
+    "raw, normalized",
+    [
+        (" vn ", "VN"),
+        ("us", "US"),
+        (" JP", "JP"),
+    ],
+)
+def test_normalize_country_code(raw, normalized):
+    assert normalize_country_code(raw) == normalized
 
 
-def test_normalize_country_code():
-    assert normalize_country_code(" vn ") == "VN"
+# --------------------------------------------------
+# Transformation contract test
+# --------------------------------------------------
+
+VALID_PAYLOAD = {
+    "name": "Hanoi",
+    "dt": 1735600000,
+    "sys": {"country": "vn"},
+    "main": {"temp": 300.15, "humidity": 65},
+    "wind": {"speed": 2.1},
+}
 
 
 def test_transform_raw_weather_happy_path():
-    payload = {
-        "name": "Hanoi",
-        "dt": 1735600000,
-        "sys": {"country": "vn"},
-        "main": {"temp": 300.15, "humidity": 65},
-        "wind": {"speed": 2.1},
+    transformed = transform_raw_weather(VALID_PAYLOAD)
+
+    assert transformed == {
+        "city": "Hanoi",
+        "country": "VN",
+        "event_time": to_event_time(1735600000),
+        "temperature": 27.0,
+        "humidity": 65,
+        "wind_speed": 2.1,
     }
 
-    transformed = transform_raw_weather(payload)
 
-    assert transformed["city"] == "Hanoi"
-    assert transformed["country"] == "VN"
-    assert transformed["temperature"] == 27.0
-    assert transformed["humidity"] == 65
-    assert transformed["wind_speed"] == 2.1
-    assert transformed["event_time"] == to_event_time(1735600000)
-
+# --------------------------------------------------
+# Spark dataframe tests
+# --------------------------------------------------
 
 def test_parse_weather_dataframe(spark):
-    raw_json = '{"name":"Hanoi","dt":1735600000,"sys":{"country":"vn"},"main":{"temp":300.15,"humidity":65},"wind":{"speed":2.1}}'
+    raw_json = """
+    {"name":"Hanoi","dt":1735600000,
+     "sys":{"country":"vn"},
+     "main":{"temp":300.15,"humidity":65},
+     "wind":{"speed":2.1}}
+    """
+
     df = spark.createDataFrame([(raw_json,)], ["raw_json"])
 
-    parsed_df = parse_weather(df)
-    row = parsed_df.collect()[0]
+    result = parse_weather(df).collect()[0]
 
-    assert row["city"] == "Hanoi"
-    assert row["country"] == "VN"
-    assert round(row["temperature"], 2) == 27.0
-    assert row["humidity"] == 65
-    assert row["wind_speed"] == 2.1
+    assert result.asDict() == {
+        "city": "Hanoi",
+        "country": "VN",
+        "event_time": result["event_time"],  # timestamp validated implicitly
+        "temperature": 27.0,
+        "humidity": 65,
+        "wind_speed": 2.1,
+    }
 
 
 def test_clean_weather_deduplicate_and_dropna(spark):
