@@ -1,6 +1,6 @@
 import os
 import logging
-from spark.spark_config import SparkConnect
+from app.spark_cfg.spark_config import SparkConnect
 
 logging.basicConfig(
     level=getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper()),

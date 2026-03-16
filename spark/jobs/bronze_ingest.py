@@ -1,4 +1,4 @@
-from spark.spark_config import SparkConnect
+from app.spark_cfg.spark_config import SparkConnect
 from pyspark.sql.functions import col, current_timestamp
 import logging
 import os

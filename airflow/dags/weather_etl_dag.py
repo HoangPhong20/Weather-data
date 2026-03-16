@@ -40,17 +40,15 @@ DEFAULT_ARGS = {
 # ==================================================
 
 def spark_task(task_id: str, job: str, timeout: int = 20):
-    """Create Spark submit task"""
-    spark_command = (
-        f"""{SPARK_SUBMIT} \
---master {COMMON_ENV['SPARK_MASTER_URL']} \
-{SPARK_JOBS_ROOT}/{job}"""
-    )
     return BashOperator(
         task_id=task_id,
-        cwd=PROJECT_ROOT,
         env=COMMON_ENV,
-        bash_command=spark_command,
+        bash_command=f"""
+docker exec spark-master \
+/opt/spark/bin/spark-submit \
+--master spark://spark-master:7077 \
+/opt/spark/app/jobs/{job}
+""",
         execution_timeout=timedelta(minutes=timeout),
     )
 
@@ -83,7 +81,7 @@ with DAG(
     # ---------------- EXTRACT ----------------
     extract = python_task(
         task_id="extract_weather",
-        script=f"{PROJECT_ROOT}/extract/weather_api.py",
+        script=f"{PROJECT_ROOT}/app/extract/weather_api.py",
     )
 
     # ---------------- SPARK LAYERS ----------------

@@ -7,7 +7,7 @@ from typing import List
 
 import requests
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def resolve_project_path(raw_path: str) -> Path:

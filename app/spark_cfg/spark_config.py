@@ -5,7 +5,6 @@ from typing import Optional, Dict, List
 
 logger = logging.getLogger(__name__)
 
-
 class SparkConnect:
 
     def __init__(

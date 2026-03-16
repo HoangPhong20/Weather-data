@@ -1,5 +1,5 @@
 from pyspark.sql import SparkSession
-from spark.spark_config import SparkConnect
+from app.spark_cfg.spark_config import SparkConnect
 import logging
 import os
 
